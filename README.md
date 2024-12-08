@@ -21,7 +21,8 @@
 ### 启动 UDP 模式的服务器
 ```bash
 ./honeyOpenvpn -mode udp -port 1194 -ca ca.crt -cert server.crt -key server.key -username 123 -password 123
-
-### 注意
+```
 若不使用账号密码，默认所有账户可以通过验证
 
+### 测试结果
+![test.png](test.png)
