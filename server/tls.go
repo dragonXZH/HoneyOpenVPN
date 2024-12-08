@@ -93,7 +93,7 @@ func HandleClient(conn net.Conn) {
 			client.State = global.S_GOT_KEY
 
 			// auth username/password fail
-			if len(global.Username) == 0 && len(global.Password) == 0 &&
+			if len(global.Username) != 0 && len(global.Password) != 0 &&
 				(global.Username != k2Req.UserNameString || global.Password != k2Req.PasswordString) {
 				plain, cmd := protocol.AuthFailedTlsPayload()
 				log.Printf("[OpenVPN] %s auth fail", client.CliConn.RemoteAddr().String())
