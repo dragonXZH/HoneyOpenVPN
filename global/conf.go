@@ -7,8 +7,8 @@ var (
 	CACert     = "ca.crt"
 	ServerCert = "server.crt"
 	ServerKey  = "server.key"
-	Username   = ""
-	Password   = ""
+	Username   = "123456"
+	Password   = "123456"
 )
 
 var (

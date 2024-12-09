@@ -8,11 +8,11 @@
 | `-ca`       | `string` | `"ca.crt"`     | CA 证书文件路径               |
 | `-cert`     | `string` | `"server.crt"` | 服务器证书文件路径            |
 | `-key`      | `string` | `"server.key"` | 服务器私钥文件路径            |
-| `-mode`     | `string` | `"udp"`        | 服务器模式：`tcp` 或 `udp`    |
-| `-password` | `string` | 无默认值       | 客户端认证密码                |
+| `-mode`     | `string` | `"tcp"`        | 服务器模式：`tcp` 或 `udp`    |
 | `-port`     | `int`    | `1194`         | 服务器端口号                  |
 | `-tlsport`  | `int`    | `1195`         | TLS 通信端口号                |
-| `-username` | `string` | 无默认值       | 客户端认证用户名              |
+| `-username` | `string` | `123456`       | 客户端认证用户名              |
+| `-password` | `string` | `123456`       | 客户端认证密码                |
 
 ---
 

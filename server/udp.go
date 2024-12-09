@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/binary"
-	"fmt"
 	"log"
 	"net"
 	"openvpnHoney/global"
@@ -15,17 +14,15 @@ func OpenVpnUdpServer() {
 	// parse addr
 	addr, err := net.ResolveUDPAddr("udp", ":"+strconv.Itoa(global.ServerPort))
 	if err != nil {
-		fmt.Println("Error resolving address:", err)
+		log.Printf("[OpenVPN] server resolving address: %s", err)
 		return
 	}
 
 	// listen connect
 	conn, err := net.ListenUDP("udp", addr)
 	if err != nil {
-		fmt.Println("Error listening:", err)
+		log.Printf("[OpenVPN] server accept error: %s", err)
 		return
-	} else {
-		fmt.Println("UDP server is listening on port", conn.LocalAddr().String())
 	}
 
 	// loop
@@ -33,46 +30,56 @@ func OpenVpnUdpServer() {
 	for {
 		readNum, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			fmt.Println("Error reading from UDP connection:", err)
+			log.Printf("[OpenVPN] %s socket error %s", clientAddr.String(), err)
 			continue
 		}
 
 		if readNum < 3 {
-			fmt.Println("Error reading from UDP connection length:", readNum)
-			continue
-		}
-
-		// tlsConn
-		tlsConn := TLSClient()
-		if tlsConn == nil {
 			continue
 		}
 
 		// client
 		client := global.ClientMapInstance.GetClient(clientAddr.String())
 		if client == nil {
-			client = global.InitClient(conn, tlsConn, global.S_INITIAL)
+			// tlsConn
+			tlsConn := TLSClient(clientAddr.String())
+			if tlsConn == nil {
+				continue
+			}
+			log.Printf("[OpenVPN] %s socket create", clientAddr.String())
+			client = &global.Client{
+				Ch:      make(chan []byte, 100),
+				CliAddr: clientAddr.String(),
+				TLSAddr: tlsConn.LocalAddr().String(),
+				CliConn: conn,
+				TLSConn: tlsConn,
+				State:   global.S_INITIAL,
+			}
 			global.ClientMapInstance.SetClient(clientAddr.String(), client)
 			global.ClientMapInstance.SetClient(tlsConn.LocalAddr().String(), client)
 			go UdpStateProcess(client, clientAddr)
 
 		}
 
-		client.Ch <- buffer
+		client.Ch <- buffer[:readNum]
 	}
 }
 
 func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
+	tlsLocalAddr := client.TLSConn.LocalAddr().String()
+
 	defer func() {
+		log.Printf("[OpenVPN] %s socket close", client.CliAddr)
 		if r := recover(); r != nil {
 			log.Println("StateProcess:", r)
 		}
 		global.ClientMapInstance.DestroyClient(clientAddr.String())
-		global.ClientMapInstance.DestroyClient(client.TLSConn.LocalAddr().String())
+		global.ClientMapInstance.DestroyClient(tlsLocalAddr)
 	}()
 
 	// pre start
 	client.State = global.S_PRE_START
+	client.TLSConn.SetReadDeadline(time.Now().Add(1 * time.Second))
 
 	for {
 		buffer := make([]byte, 2048)
@@ -80,7 +87,7 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 		// read base packet
 		select {
 		case buffer = <-client.Ch:
-		case <-time.After(1 * time.Minute):
+		case <-time.After(10 * time.Minute):
 			return
 		}
 
@@ -89,7 +96,7 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 
 		// extract base packet
 		reqBP := protocol.BasePacket{}
-		reqBP.UnMarshal(buffer)
+		reqBP.UdpUnMarshal(buffer)
 
 		// opcode & keg id
 		opcode := protocol.GetOpcodeByType(reqBP.Type)
@@ -102,12 +109,10 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 		}
 
 		// extract control packet
-		if opcode == protocol.P_CONTROL_HARD_RESET_CLIENT_V2 ||
-			opcode == protocol.P_CONTROL_HARD_RESET_CLIENT_V3 ||
-			opcode == protocol.P_CONTROL_V1 || opcode == protocol.P_ACK_V1 {
+		{
 			cp := protocol.ControlPacket{}
 			reqBP.Payload = &cp
-			cp.UnMarshal(buffer[2+1:], opcode)
+			cp.UnMarshal(buffer[1:], opcode)
 			// set sid
 			if cp.SessionID > 0 {
 				client.RemoteSessionID = cp.SessionID
@@ -115,10 +120,6 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 			// set tls payload
 			reqTLSPayload = cp.TLSPayload
 
-		} else if opcode == protocol.P_DATA_V1 || opcode == protocol.P_DATA_V2 { // unprocess
-			continue
-		} else {
-			continue
 		}
 
 		// set state
@@ -136,15 +137,21 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 			client.LocalSessionID = binary.LittleEndian.Uint64(protocol.RandBytes(8))
 		}
 
-		// skip resp P_ACK_V1
+		//
 		if opcode == protocol.P_ACK_V1 {
 			continue
 		}
 
 		// decrypt data
+		buffer = make([]byte, 2048)
 		if len(reqTLSPayload) > 0 {
+			if client.State < global.S_SENT_KEY {
+				log.Printf("[OpenVPN] %s tls handshake", client.CliAddr)
+			}
+
 			// tls req packet
 			client.TLSConn.Write(reqTLSPayload)
+			//log.Printf("[OpenVPN] tls req packet %d %d", len(reqTLSPayload), reqTLSPayload)
 
 			// tls resp packet
 			tlsPayloadLength, err := client.TLSConn.Read(buffer)
@@ -154,13 +161,11 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 
 			// tls resp overlay openvpn
 			respTLSPayload = buffer[:tlsPayloadLength]
-			log.Println("[OpenVPN] tls resp packet:", tlsPayloadLength, respTLSPayload)
+			//log.Println("[OpenVPN] tls resp packet:", tlsPayloadLength, respTLSPayload)
 		}
 
 		// generate control packet
-		if opcode == protocol.P_CONTROL_HARD_RESET_CLIENT_V2 ||
-			opcode == protocol.P_CONTROL_HARD_RESET_CLIENT_V3 ||
-			opcode == protocol.P_CONTROL_V1 || opcode == protocol.P_ACK_V1 {
+		{
 
 			// marshal control packet
 			respCP := protocol.ControlPacket{
@@ -184,13 +189,11 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 				Length: uint16(1 + len(payload)),
 				Type:   protocol.GetRespType(opcode, keyId),
 			}
-			resp := respBP.Marshal(payload)
+			resp := respBP.UdpMarshal(payload)
 			client.CliConn.(*net.UDPConn).WriteToUDP(resp, clientAddr)
-		} else if opcode == protocol.P_DATA_V1 || opcode == protocol.P_DATA_V2 { // unprocess
-			continue
-		} else {
-			continue
 		}
+
 		client.SendPacketIDCount += 1
+
 	}
 }

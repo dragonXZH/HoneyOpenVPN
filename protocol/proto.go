@@ -45,22 +45,34 @@ const (
 )
 
 type BasePacket struct {
-	Length  uint16
+	Length  uint16 // no: udp
 	Type    uint8
 	Payload interface{}
 }
 
-func (b *BasePacket) UnMarshal(buffer []byte) {
+func (b *BasePacket) TcpUnMarshal(buffer []byte) {
 	b.Length = binary.BigEndian.Uint16(buffer[:2])
 	b.Type = buffer[2]
 }
 
-func (b *BasePacket) Marshal(payload []byte) []byte {
+func (b *BasePacket) TcpMarshal(payload []byte) []byte {
 	buffer := make([]byte, 2+1+len(payload))
 	b.Length = uint16(1 + len(payload))
 	binary.BigEndian.PutUint16(buffer[:2], b.Length)
 	buffer[2] = b.Type
 	copy(buffer[2+1:], payload)
+	return buffer
+}
+
+func (b *BasePacket) UdpUnMarshal(buffer []byte) {
+	b.Length = uint16(len(buffer))
+	b.Type = buffer[0]
+}
+
+func (b *BasePacket) UdpMarshal(payload []byte) []byte {
+	buffer := make([]byte, 1+len(payload))
+	buffer[0] = b.Type
+	copy(buffer[1:], payload)
 	return buffer
 }
 
@@ -146,10 +158,7 @@ func (h *ControlPacket) UnMarshal(buff []byte, opcode uint8) {
 	// remote sid
 	// only for linux client ?
 	//(opcode == P_CONTROL_V1 && h.MessagePacketIDArrayLength > 0)
-	if opcode != P_CONTROL_HARD_RESET_CLIENT_V1 &&
-		opcode != P_CONTROL_HARD_RESET_CLIENT_V2 &&
-		opcode != P_CONTROL_HARD_RESET_CLIENT_V3 &&
-		(opcode == P_CONTROL_V1 && h.MessagePacketIDArrayLength > 0) {
+	if (opcode == P_CONTROL_V1 && h.MessagePacketIDArrayLength > 0) || (opcode == P_ACK_V1) {
 		h.RemoteSessionID = binary.BigEndian.Uint64(buff[index : index+8])
 		index += 8
 	}

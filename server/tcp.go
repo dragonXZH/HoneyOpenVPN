@@ -18,23 +18,30 @@ func OpenVpnTcpServer() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("[OpenVPN] %s connect error:%s", conn.RemoteAddr().String(), err.Error())
+			log.Printf("[OpenVPN] %s socket error:%s", conn.RemoteAddr().String(), err.Error())
 			continue
 		} else {
-			log.Printf("[OpenVPN] %s socket create address", conn.RemoteAddr().String())
+			log.Printf("[OpenVPN] %s socket create", conn.RemoteAddr().String())
 		}
 
-		// tlsConn
-		tlsConn := TLSClient()
-		if tlsConn == nil {
-			continue
-		}
-
-		// client
+		// generate client
 		client := global.ClientMapInstance.GetClient(conn.RemoteAddr().String())
 		if client == nil {
-			client = global.InitClient(conn, tlsConn, global.S_INITIAL)
-			global.ClientMapInstance.SetClient(tlsConn.LocalAddr().String(), client)
+			// tlsConn
+			tlsConn := TLSClient(conn.RemoteAddr().String())
+			if tlsConn == nil {
+				continue
+			}
+			// client
+			client = &global.Client{
+				Ch:      make(chan []byte, 100),
+				CliAddr: conn.RemoteAddr().String(),
+				TLSAddr: tlsConn.LocalAddr().String(),
+				CliConn: conn,
+				TLSConn: tlsConn,
+				State:   global.S_INITIAL,
+			}
+			global.ClientMapInstance.SetClient(client.TLSAddr, client)
 		}
 
 		go TcpStateProcess(client)
@@ -43,10 +50,11 @@ func OpenVpnTcpServer() {
 
 func TcpStateProcess(client *global.Client) {
 	defer func() {
+		log.Printf("[OpenVPN] %s socket close", client.CliAddr)
 		if r := recover(); r != nil {
 			log.Println("StateProcess:", r)
 		}
-		global.ClientMapInstance.DestroyClient(client.TLSConn.LocalAddr().String())
+		global.ClientMapInstance.DestroyClient(client.TLSAddr)
 	}()
 
 	// pre start
@@ -67,7 +75,7 @@ func TcpStateProcess(client *global.Client) {
 
 		// extract base packet
 		reqBP := protocol.BasePacket{}
-		reqBP.UnMarshal(buffer)
+		reqBP.TcpUnMarshal(buffer)
 
 		// opcode & key id
 		opcode := protocol.GetOpcodeByType(reqBP.Type)
@@ -122,7 +130,7 @@ func TcpStateProcess(client *global.Client) {
 		if len(reqTLSPayload) > 0 {
 			// tls req packet
 			if client.State < global.S_SENT_KEY {
-				log.Printf("[OpenVPN] %s tls handshake", client.CliConn.RemoteAddr().String())
+				log.Printf("[OpenVPN] %s tls handshake", client.CliAddr)
 			}
 			client.TLSConn.Write(reqTLSPayload)
 
@@ -162,7 +170,7 @@ func TcpStateProcess(client *global.Client) {
 				Length: uint16(1 + len(payload)),
 				Type:   protocol.GetRespType(opcode, keyId),
 			}
-			resp := respBP.Marshal(payload)
+			resp := respBP.TcpMarshal(payload)
 			client.CliConn.(*net.TCPConn).Write(resp)
 		}
 

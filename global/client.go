@@ -57,6 +57,8 @@ func (c *ClientMap) DestroyClient(key string) {
 
 type Client struct {
 	Ch                chan []byte
+	CliAddr           string
+	TLSAddr           string
 	CliConn           net.Conn
 	TLSConn           net.Conn
 	State             int
@@ -66,16 +68,6 @@ type Client struct {
 	SendPacketIDCount uint32
 
 	sync.RWMutex
-}
-
-func InitClient(cliConn, tlsConn net.Conn, state int) *Client {
-	client := &Client{
-		Ch:      make(chan []byte, 100),
-		CliConn: cliConn,
-		TLSConn: tlsConn,
-		State:   state,
-	}
-	return client
 }
 
 func (c *Client) Destroy() {
