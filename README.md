@@ -11,8 +11,8 @@
 | `-mode`     | `string` | `"tcp"`        | 服务器模式：`tcp` 或 `udp`    |
 | `-port`     | `int`    | `1194`         | 服务器端口号                  |
 | `-tlsport`  | `int`    | `1195`         | TLS 通信端口号                |
-| `-username` | `string` | `123456`       | 客户端认证用户名              |
-| `-password` | `string` | `123456`       | 客户端认证密码                |
+| `-username` | `string` | `""`           | 客户端认证用户名              |
+| `-password` | `string` | `""`           | 客户端认证密码                |
 
 ---
 
