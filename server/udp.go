@@ -87,7 +87,7 @@ func UdpStateProcess(client *global.Client, clientAddr *net.UDPAddr) {
 		// read base packet
 		select {
 		case buffer = <-client.Ch:
-		case <-time.After(10 * time.Minute):
+		case <-time.After(30 * time.Second):
 			return
 		}
 

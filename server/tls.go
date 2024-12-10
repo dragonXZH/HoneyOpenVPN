@@ -70,10 +70,10 @@ func TLSServer() {
 func HandleClient(conn net.Conn) {
 	// recover
 	defer func() {
-		log.Printf("[OpenVPN] %s tls decrypt close", conn.RemoteAddr().String())
+		//log.Printf("[OpenVPN] %s tls decrypt close", conn.RemoteAddr().String())
 		_ = conn.Close()
 		if r := recover(); r != nil {
-			log.Printf("[OpenVPN] %s tls decrypt panic error %s", conn.RemoteAddr().String(), r)
+			//log.Printf("[OpenVPN] %s tls decrypt panic error %s", conn.RemoteAddr().String(), r)
 		}
 	}()
 
@@ -105,6 +105,14 @@ func HandleClient(conn net.Conn) {
 		if client.State < global.S_GENERATED_KEYS {
 			k2Req := protocol.InitReqKeyMethod2HandShakeTLSPayload()
 			k2Req.UnMarshal(buf[:n])
+
+			// options
+			log.Printf("[OpenVPN] %s options: %s", client.CliAddr, k2Req.OpString)
+
+			// peer info
+			log.Printf("[OpenVPN] %s peerinfo: %s", client.CliAddr, k2Req.PeerInfoString)
+
+			// username/password
 			log.Printf("[OpenVPN] %s auth username: %s password:%s",
 				client.CliAddr, k2Req.UserNameString, k2Req.PasswordString)
 			client.State = global.S_GOT_KEY
@@ -121,9 +129,6 @@ func HandleClient(conn net.Conn) {
 			} else {
 				log.Printf("[OpenVPN] %s auth succ", client.CliAddr)
 			}
-
-			log.Printf("[OpenVPN] %s options: %s", client.CliAddr, k2Req.OpString)
-			log.Printf("[OpenVPN] %s peerinfo: %s", client.CliAddr, k2Req.PeerInfoString)
 
 			// auth username/password succ
 			plain, _ := protocol.AuthFailedTlsPayload()
